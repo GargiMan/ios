@@ -9,6 +9,7 @@ Přistěhovalci vstupují do budovy jednotlivě (pouze jeden turniket) a také s
 # Podrobná specifikace úlohy
 ### Spuštění
 `$ ./proj2 PI IG JG IT JT`
+
 kde
 - PI je počet procesu vygenerovaných v kategorii přistěhovalcu; bude postpne vytvořeno PI immigrants.
 `P >= 1`
@@ -113,6 +114,7 @@ uspání po uvolnění semaforú apod. Pouze pro testovací účely, do fináln�
 
 # Ukázka výstupu
 Spuštění:  `$ ./proj2 5 2 7 1 1`
+
 **Výstup**
 ```
 1   : IMM 1 : starts
