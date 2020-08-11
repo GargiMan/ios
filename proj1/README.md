@@ -19,10 +19,10 @@ a podadresáře).
 3. Přepínač -n nastavuje normalizaci histogramu (viz níže).
 
 Součástí reportu je:
-• informace o adresářích:
-• počet všech adresářů,
-• počet všech souborů,
-• histogram velikosti souborů,
+- informace o adresářích:
+- počet všech adresářů,
+- počet všech souborů,
+- histogram velikosti souborů,
 
 #### FORMÁT REPORTU
 Root directory: DIR
@@ -42,15 +42,15 @@ počet souborů v dané kategorii. Každý soubor v dané kategorii je reprezent
 případě normalizovného histogramu je toto upraveno - viz níže). Každý řádek histogramu začíná dvěma mezerami,
 názvem kategorie, který je zarovnán na stejnou šířku, následované dvojtečkou a mezerou. FSHIST má předem
 určené kategorie:
-• <100 B
-• <1 KiB
-• <10 KiB
-• <100 KiB
-• <1 MiB
-• <10 MiB
-• <100 MiB
-• <1 GiB
-• >=1 GiB
+- <100 B
+- <1 KiB
+- <10 KiB
+- <100 KiB
+- <1 MiB
+- <10 MiB
+- <100 MiB
+- <1 GiB
+- \>=1 GiB
 7. V případě nastavené normalizace histogramu je velikost vykreslené kategorie (tj. počet mřížek) poměrně upravena
 tak, aby celková délka řádku nepřekročila maximální délku řádku. Maximální délka řádku je dána buď délkou
 řádku terminálu (pokud je skritp spuštěn v terminálu) minus jeden znak, nebo 79, pokud není výstup skriptu
@@ -61,14 +61,14 @@ Skript vrací úspěch v případě úspěšného zjištění všech informací.
 o souborech či adresářích. V takovém případě skript skončí také s chybovým hlášením.
 
 ## Implementační detaily
-• Přítomnost terminálu zjišťujte pomocí utility test. Šířku řádku terminálu pomocí tput cols.
-• Skript by měl mít v celém běhu nastaveno POSIXLY_CORRECT=yes.
-• Skript by měl běžet na všech běžných shellech (dash, ksh, bash). Ve školním prostředí můžete použít základní
+- Přítomnost terminálu zjišťujte pomocí utility test. Šířku řádku terminálu pomocí tput cols.
+- Skript by měl mít v celém běhu nastaveno POSIXLY_CORRECT=yes.
+- Skript by měl běžet na všech běžných shellech (dash, ksh, bash). Ve školním prostředí můžete použít základní
 (POSIX) /bin/sh.
-• Referenční stroj neexistuje. Skript musí běžet na běžně dostupných OS GNU/Linux a *BSD. Ve školním prostředí
+- Referenční stroj neexistuje. Skript musí běžet na běžně dostupných OS GNU/Linux a *BSD. Ve školním prostředí
 máte k dispozici počítače v laboratořích (CentOS), stroj merlin (CentOS) a eva (FreeBSD). Pozor, na stroji
 merlin je shell /bin/ksh symbolický odkaz na bash (tj. nechová se jako Korn shell jako na obvyklých strojích).
-• Skript nesmí používat dočasné soubory.
+- Skript nesmí používat dočasné soubory.
 
 ## Příklady použití
 Příklady předpokládají skript dirgraph v cestě spustitelných programů (PATH).
