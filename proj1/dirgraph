@@ -1,0 +1,112 @@
+#!/bin/sh
+export POSIXLY_CORRECT=yes
+
+IGNORE=""
+NORMAL=0
+DIR=$PWD
+DIRS=0
+FILES=0
+
+errorexit() { 
+    printf "Error: %s\n" "$*" >&2
+    exit 1
+}
+
+normalize() {
+    MAX=0
+    if [ "$SIZE1" -gt "$MAX" ]; then MAX=$SIZE1; fi
+    if [ "$SIZE2" -gt "$MAX" ]; then MAX=$SIZE2; fi
+    if [ "$SIZE3" -gt "$MAX" ]; then MAX=$SIZE3; fi
+    if [ "$SIZE4" -gt "$MAX" ]; then MAX=$SIZE4; fi
+    if [ "$SIZE5" -gt "$MAX" ]; then MAX=$SIZE5; fi
+    if [ "$SIZE6" -gt "$MAX" ]; then MAX=$SIZE6; fi
+    if [ "$SIZE7" -gt "$MAX" ]; then MAX=$SIZE7; fi
+    if [ "$SIZE8" -gt "$MAX" ]; then MAX=$SIZE8; fi
+    if [ "$SIZE9" -gt "$MAX" ]; then MAX=$SIZE9; fi
+
+    test -t 1 && MAXCHARS=$(($(tput cols)-13)) || MAXCHARS=67
+
+    while [ "$MAX" -gt $MAXCHARS ]; do
+        MAX=$((MAX/2 + MAX%2))
+        SIZE1=$((SIZE1/2 + SIZE1%2))
+        SIZE2=$((SIZE2/2 + SIZE2%2))
+        SIZE3=$((SIZE3/2 + SIZE3%2))
+        SIZE4=$((SIZE4/2 + SIZE4%2))
+        SIZE5=$((SIZE5/2 + SIZE5%2))
+        SIZE6=$((SIZE6/2 + SIZE6%2))
+        SIZE7=$((SIZE7/2 + SIZE7%2))
+        SIZE8=$((SIZE8/2 + SIZE8%2))
+        SIZE9=$((SIZE9/2 + SIZE9%2))
+    done
+}
+
+sizeprint() {
+    SIZE=$1
+    while [ "$SIZE" -gt 0 ]; do 
+        printf "#"
+        SIZE=$((SIZE-1))
+    done
+    printf "\n"
+}
+
+while [ $# -gt 0 ]; do
+    case $1 in
+        -i)
+            if [ -n "$IGNORE" ]; then
+                errorexit "Argument \"$1\" was already set"
+            elif [ "$2" = "-n" ] || [ -z "$2" ]; then
+                errorexit "Argument \"$1\" does not have correct form"
+            fi
+            IGNORE="$2"
+            shift
+            shift
+            ;;
+        -n)
+            if [ $NORMAL -eq 1 ]; then
+                errorexit "Argument \"$1\" was already set"
+            fi
+            NORMAL=1
+            shift
+            ;;
+        *)
+            if [ "$DIR" != "$PWD" ]; then
+                errorexit "Command \"$1\" does not exist or directory was already set to \"$DIR\""
+            elif [ ! -d "$1" ]; then 
+                errorexit "Directory \"$1\" does not exist"
+            fi
+            DIR=$1
+            shift
+            ;;
+    esac
+done
+
+if [ $(find "$DIR" 2>&1 | grep -E -c "Permission denied") -ne 0 ] || [ $(find "$DIR" 2>&1 | grep -E -c "Operace zamítnuta") -ne 0 ]; then errorexit "Permission denied"; fi
+DIRS=$(find "$DIR" -type d ! -name "$IGNORE" | wc -l)
+FILES=$(find "$DIR" ! -type d ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+
+echo "Root directory: $DIR"
+echo "Directories: $DIRS"
+echo "All files: $FILES" 
+echo "File size histogram: "
+
+SIZE1=$(find "$DIR" ! -type d -size -100c ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+SIZE2=$(find "$DIR" ! -type d -size +100c -size -1024c ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+SIZE3=$(find "$DIR" ! -type d -size +1024c -size -10240c ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+SIZE4=$(find "$DIR" ! -type d -size +10240c -size -102400c ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+SIZE5=$(find "$DIR" ! -type d -size +102400c -size -1048576c ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+SIZE6=$(find "$DIR" ! -type d -size +1048576c -size -10485760c ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+SIZE7=$(find "$DIR" ! -type d -size +10485760c -size -104857600c ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+SIZE8=$(find "$DIR" ! -type d -size +104857600c -size -1073741824c ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+SIZE9=$(find "$DIR" ! -type d -size +1073741824c ! -name "$IGNORE" | grep -E -c -v "/$IGNORE/")
+
+if [ $NORMAL -eq 1 ]; then normalize; fi
+
+printf "  <100 B  : " && sizeprint "$SIZE1"
+printf "  <1 KiB  : " && sizeprint "$SIZE2"
+printf "  <10 KiB : " && sizeprint "$SIZE3"
+printf "  <100 KiB: " && sizeprint "$SIZE4"
+printf "  <1 MiB  : " && sizeprint "$SIZE5"
+printf "  <10 MiB : " && sizeprint "$SIZE6"
+printf "  <100 MiB: " && sizeprint "$SIZE7"
+printf "  <1 GiB  : " && sizeprint "$SIZE8"
+printf "  >=1 GiB : " && sizeprint "$SIZE9"
