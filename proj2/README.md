@@ -1,24 +1,26 @@
 ##### 2. Úloha IOS (2019/20)
 # Popis úlohy
 Implementujte v jazyce C modifikovaný synchronizační problém Faneuil Hall Problem (mužete se inspirovat knihou The Little Book of Semaphores).
+
 Existují dva druhy vláken: přistěhovalci (immigrants) a jeden soudce (judge). Přistěhovalci musí čekat ve frontě, vstoupit do soudní budovy, zaregistrovat se a pak čekat na rozhodnutí soudce. V určitém okamžiku vstoupí soudce do budovy. Když je soudce v budově, nikdo jiný nesmí vstoupit dovnitř ani odejít z budovy. Jakmile se všichni přistěhovalci, kteří vstoupili do budovy, zaregistrují, muže soudce vydat rozhodnutí (potvrdit naturalizaci). Po vydání rozhodnutí (potvrzení) si přistěhovalci vyzvednou certifikát o občanství USA. Soudce odejde z budovy v učcitém okamžiku po rozhodnutí. Poté, co přistěhovalci vyzvednou certifikát, mohou odejít.
+
 Přistěhovalci vstupují do budovy jednotlivě (pouze jeden turniket) a také se jednotlivě registrují (pouze jedno registrační místo). Soudce vydává rozhodnutí pro všechny registrované přistěhovalce naráz. Certifikáty si imigranti vyzvedávají nezávisle na sobě a přítomnosti soudce v budově.
 
 # Podrobná specifikace úlohy
 ### Spuštění
 `$ ./proj2 PI IG JG IT JT`
 kde
-• PI je počet procesu vygenerovaných v kategorii přistěhovalcu; bude postpne vytvořeno PI immigrants.
+- PI je počet procesu vygenerovaných v kategorii přistěhovalcu; bude postpne vytvořeno PI immigrants.
 `P >= 1`
-• IG je maximální hodnota doby (v milisekundách), po které je generován nový proces immigrant.
+- IG je maximální hodnota doby (v milisekundách), po které je generován nový proces immigrant.
 `IG >= 0 && IG <= 2000`
-• JG je maximální hodnota doby (v milisekundách), po které soudce opět vstoupí do budovy.
+- JG je maximální hodnota doby (v milisekundách), po které soudce opět vstoupí do budovy.
 `JG >= 0 && JG <= 2000`
-• IT je maximální hodnota doby (v milisekundách), která simuluje trvání vyzvedávání certifikátu přistěhovalcem.
+- IT je maximální hodnota doby (v milisekundách), která simuluje trvání vyzvedávání certifikátu přistěhovalcem.
 `IT >= 0 && IT <= 2000`
-• JT je maximální hodnota doby (v milisekundách), která simuluje trvání vydávání rozhodnutí soudcem.
+- JT je maximální hodnota doby (v milisekundách), která simuluje trvání vydávání rozhodnutí soudcem.
 `JT >= 0 && JT <= 2000`
-• Všechny parametry jsou celá čísla.
+- Všechny parametry jsou celá čísla.
 
 ### Implementační detaily
 - Pracujte s procesy, ne s vlákny.
@@ -87,27 +89,27 @@ Jakmile jsou tyto procesy ukončeny, ukončí se i hlavní proces s kódem (exit
 
 # Podmínky vypracování
 ### Obecné informace
-• Projekt implementujte v jazyce C. Komentujte zdrojové kódy, programujte přehledně. Součástí hodnocení bude i kvalita zdrojového kódu.
-• Kontrolujte, zda se všechny procesy ukončují korektně a zda při ukončování správně uvolnujete všechny alokované zdroje.
-• Dodržujte syntax zadaných jmen, formát souboru a formát výstupních dat. Použijte základní skript pro ověření korektnosti výstupního formátu (dostupný z webu se zadáním). Informace o skriptu jsou uvedeny v komentáři skriptu.
-• Dotazy k zadání: Veškeré nejasnosti a dotazy řešte pouze prostřednictvím diskuzního fóra k projektu 2.
-• Poznámka k výstupúm: Informace z bodu 3.1.1 procesu soudce se nemusí vždy objevit ve výstupu (je silně závislé na přepínání procesú).
-• Poznámka k testování: Múžete si nasimulovat častější přepínání procesú např. vložením krátkého
+- Projekt implementujte v jazyce C. Komentujte zdrojové kódy, programujte přehledně. Součástí hodnocení bude i kvalita zdrojového kódu.
+- Kontrolujte, zda se všechny procesy ukončují korektně a zda při ukončování správně uvolnujete všechny alokované zdroje.
+- Dodržujte syntax zadaných jmen, formát souboru a formát výstupních dat. Použijte základní skript pro ověření korektnosti výstupního formátu (dostupný z webu se zadáním). Informace o skriptu jsou uvedeny v komentáři skriptu.
+- Dotazy k zadání: Veškeré nejasnosti a dotazy řešte pouze prostřednictvím diskuzního fóra k projektu 2.
+- Poznámka k výstupúm: Informace z bodu 3.i.a procesu soudce se nemusí vždy objevit ve výstupu (je silně závislé na přepínání procesú).
+- Poznámka k testování: Múžete si nasimulovat častější přepínání procesú např. vložením krátkého
 uspání po uvolnění semaforú apod. Pouze pro testovací účely, do finálního řešení nevkládejte!
 
 ### Překlad
-• Pro překlad používejte nástroj make. Součástí odevzdání bude soubor Makefile.
-• Překlad se provede příkazem make v adresáři, kde je umístěn soubor Makefile.
-• Po překladu vznikne spustitelný soubor se jménem proj2, který bude umístěn ve stejném adresáři jako soubor Makefile
-• Zdrojové kódy překládejte s přepínači `-std=gnu99 -Wall -Wextra -Werror -pedantic`
-• Pokud to vaše řešení vyžaduje, lze přidat další přepínače pro linker (např. kvuli semaforúm či sdílené paměti, -pthread, -lrt, . . . ).
+- Pro překlad používejte nástroj make. Součástí odevzdání bude soubor Makefile.
+- Překlad se provede příkazem make v adresáři, kde je umístěn soubor Makefile.
+- Po překladu vznikne spustitelný soubor se jménem proj2, který bude umístěn ve stejném adresáři jako soubor Makefile
+- Zdrojové kódy překládejte s přepínači `-std=gnu99 -Wall -Wextra -Werror -pedantic`
+- Pokud to vaše řešení vyžaduje, lze přidat další přepínače pro linker (např. kvuli semaforúm či sdílené paměti, -pthread, -lrt, . . . ).
 
 ### Odevzdání
-• Součástí odevzdání budou pouze soubory se zdrojovými kódy (*.c, *.h) a soubor Makefile. Tyto soubory zabalte pomocí nástoje zip do archivu s názvem proj2.zip.
-• Archiv vytvořte tak, aby po rozbalení byl soubor Makefile umístěn ve stejném adresáři, jako je archiv.
-• Archiv proj2.zip odevzdejte prostřednictvím informačního systému, termín Projekt 2.
-• Pokud nebude dodržena forma odevzdání nebo projekt nepújde přeložit, bude projekt hodnocen 0 body.
-• Archiv odevzdejte pomocí informačního systému v dostatečném předstihu (odevzdaný soubor múžete před vypršením termínu snadno nahradit jeho novější verzí, kdykoliv budete potřebovat).
+- Součástí odevzdání budou pouze soubory se zdrojovými kódy (*.c, *.h) a soubor Makefile. Tyto soubory zabalte pomocí nástoje zip do archivu s názvem proj2.zip.
+- Archiv vytvořte tak, aby po rozbalení byl soubor Makefile umístěn ve stejném adresáři, jako je archiv.
+- Archiv proj2.zip odevzdejte prostřednictvím informačního systému, termín Projekt 2.
+- Pokud nebude dodržena forma odevzdání nebo projekt nepújde přeložit, bude projekt hodnocen 0 body.
+- Archiv odevzdejte pomocí informačního systému v dostatečném předstihu (odevzdaný soubor múžete před vypršením termínu snadno nahradit jeho novější verzí, kdykoliv budete potřebovat).
 
 # Ukázka výstupu
 Spuštění:  `$ ./proj2 5 2 7 1 1`
