@@ -1,0 +1,449 @@
+#!/bin/sh
+export POSIXLY_CORRECT=yes
+
+printhelp() {
+    printf "MOLE - Makes One's Life Easier\n"
+    printf "Usage:\n"
+    printf "  mole -h                           print this help\n"
+    printf "  mole [-g GROUP] FILE              edit FILE and assign editation to group\n"
+    printf "  mole [-m] [FILTERS] [DIRECTORY]   edit last edited file in DIRECTORY, FILTERS can be used to filter files, -m to edit most edited file\n"
+    printf "  mole list [FILTERS] [DIRECTORY]   list edited files in DIRECTORY, FILTERS can be used to filter files\n"
+    #create secret log with edit times
+    #printf "  mole secret-log [-b DATE] [-a DATE] [DIRECTORY1 [DIRECTORY2 [...]]]\n"  
+    printf "\n[FILTERS]:\n"
+    printf "  [ -g GROUP1[,GROUP2[,...]]]   ignore edits not in GROUP\n"
+    printf "  [ -a DATE ]                   ignore edits before DATE, date format: YYYY-MM-DD\n"
+    printf "  [ -b DATE ]                   ignore edits after DATE, date format: YYYY-MM-DD\n"
+}
+
+errorexit() { 
+    printf "Error: %s\n" "$*" >&2
+    exit 1
+}
+
+logfile() {
+    DATE=$(date +%Y/%m/%d)
+    TIME=$(date +%H:%M:%S)
+    DATETIME="${DATE}_${TIME}"
+    echo "$FILE;$DATETIME,$GROUP" >> "$MOLE_RC"
+}
+
+list_edits() {
+    
+    EDITS=$1
+
+    #find longest filename
+    MAX_FILENAME_LEN=0
+    for EDIT in $EDITS; do
+        FILENAME=$(echo "$EDIT" | awk -F ';' '{ print $1 }' | xargs basename)
+        if [ ${#FILENAME} -gt "$MAX_FILENAME_LEN" ]; then
+            MAX_FILENAME_LEN=${#FILENAME}
+        fi
+    done
+
+    FILES=""
+
+    #collect all files once
+    for EDIT in $EDITS; do
+        FILE_F=$(echo "$EDIT" | awk -F ';' '{ print $1 }')
+        if ! echo "$FILES" | grep -qE "(^|;)$FILE_F($|;)"; then
+            FILES="$FILES;$FILE_F"
+        fi
+    done
+
+    #sort files
+    FILES=$(echo "$FILES" | tr ';' '\n' | sort -df | tr '\n' ' ')
+
+    #print files and groups
+    for FILE in $FILES; do
+        FILENAME=$(basename "$FILE")
+        FILENAME_LEN=${#FILENAME}
+        SPACES_REQUIRED=$((MAX_FILENAME_LEN - FILENAME_LEN))
+        INDENT=$(printf "%${SPACES_REQUIRED}s")
+        
+        #collect groups
+        FILE_GROUPS=""
+        for EDIT in $EDITS; do
+            EDIT_FILE=$(echo "$EDIT" | awk -F ';' '{ print $1 }')
+            if [ "$EDIT_FILE" != "$FILE" ]; then
+                continue
+            fi
+
+            EDIT_GROUP=$(echo "$EDIT" | awk -F ',' '{ print $2 }')
+            if ! echo "$FILE_GROUPS" | grep -Eq "(^| )$EDIT_GROUP($| )"; then
+                if [ -z "$FILE_GROUPS" ]; then
+                    FILE_GROUPS="$EDIT_GROUP"
+                else
+                    FILE_GROUPS="$FILE_GROUPS $EDIT_GROUP"
+                fi
+            fi
+        done
+
+        #sort groups
+        FILE_GROUPS=$(echo "$FILE_GROUPS" | tr ' ' '\n' | sort -df | tr '\n' ',' | sed 's/^,//' | sed 's/,$//')
+
+        #empty group list
+        if [ -z "$FILE_GROUPS" ]; then
+            FILE_GROUPS="-"
+        fi
+
+        #print filename and groups
+        echo "$FILENAME: $INDENT$FILE_GROUPS"
+    done
+}
+
+secretlog_create() {
+
+    EDITS=$1
+    FILES=""
+
+    #collect all files once
+    for EDIT in $EDITS; do
+        FILE_F=$(echo "$EDIT" | awk -F ';' '{ print $1 }')
+        if ! echo "$FILES" | grep -qE "(^|;)$FILE_F($|;)"; then
+            FILES="$FILES;$FILE_F"
+        fi
+    done
+
+    #sort files
+    FILES=$(echo "$FILES" | tr ';' '\n' | sort -df | tr '\n' ' ')
+
+    LOG_DATA=""
+
+    #print files and datetimes
+    for FILE in $FILES; do
+        
+        #collect datetimes
+        FILE_DATETIMES=""
+        for EDIT in $EDITS; do
+            EDIT_FILE=$(echo "$EDIT" | awk -F ';' '{ print $1 }')
+            if [ "$EDIT_FILE" != "$FILE" ]; then
+                continue
+            fi
+
+            EDIT_DATETIME=$(echo "$EDIT" | awk -F ',' '{ print $1 }' | cut -d ';' -f 2)
+            if [ -z "$FILE_DATETIMES" ]; then
+                FILE_DATETIMES="$EDIT_DATETIME"
+            else
+                FILE_DATETIMES="$FILE_DATETIMES;$EDIT_DATETIME"
+            fi
+        done
+
+        FILE_DATETIMES=$(echo "$FILE_DATETIMES" | tr '/' '-' | tr ':' '-')
+
+        #append file and datetimes
+        LOG_DATA="$LOG_DATA$FILE;$FILE_DATETIMES\n"
+    done
+
+    if [ "$(mkdir -p ~/.mole 2>&1 | grep -Ec "(Permission denied|Operace zamítnuta)")" -ne 0 ]; then
+        errorexit "Permission denied"
+    fi
+
+    LOG_DATETIME=$(date +%F_%H-%M-%S)
+    if [ "$(printf "%s" "$LOG_DATA" | bzip2 > ~/.mole/log_"${USER}"_"${LOG_DATETIME}".bz2 2>&1 | grep -Ec "(Permission denied|Operace zamítnuta)")" -ne 0 ]; then 
+        errorexit "Permission denied"
+    fi
+}
+
+filter_edits() {
+    GROUP_LIST=$(echo "$GROUP" | tr ',' ' ')
+    DATE_MIN_S=$(date -d "$DATE_AFTER 23:59:59" +%s)
+    DATE_MAX_S=$(date -d "$DATE_BEFORE 00:00:00" +%s)
+
+    if [ -n "$DATE_AFTER" ] && [ -n "$DATE_BEFORE" ]; then
+        if [ "$DATE_MIN_S" -gt "$DATE_MAX_S" ]; then
+            errorexit "Argument \"-a\" is greater than argument \"-b\""
+        fi
+    fi
+
+    for EDIT_E in $1; do
+
+        EDIT_DATETIME=$(echo "$EDIT_E" | awk -F ',' '{ print $1 }' | cut -d ';' -f 2 | tr '_' ' ')
+        EDIT_DATETIME_S=$(date -d "$EDIT_DATETIME" +%s)
+        if [ -n "$DATE_AFTER" ]; then
+            if [ "$EDIT_DATETIME_S" -le "$DATE_MIN_S" ]; then
+                continue
+            fi
+        fi
+        if [ -n "$DATE_BEFORE" ]; then
+            if [ "$EDIT_DATETIME_S" -ge "$DATE_MAX_S" ]; then
+                continue
+            fi
+        fi
+
+        EDIT_GROUP=$(echo "$EDIT_E" | awk -F ',' '{ print $2 }')
+        if [ -n "$GROUP" ]; then
+            if ! echo "$GROUP_LIST" | tr ',' '\n' | grep -qx "$EDIT_GROUP"; then
+                continue
+            fi
+        fi
+
+        echo "$EDIT_E"
+    done
+}
+
+#utility realpath 
+if ! command -v realpath >/dev/null ; then
+    errorexit "Utility \"realpath\" is not available"
+fi
+
+#mole log
+if [ -z "$MOLE_RC" ]; then
+    errorexit "Log file is not set"
+elif [ ! -f "$MOLE_RC" ]; then
+    if [ "$(mkdir -p "$(dirname "$MOLE_RC")" 2>&1 | grep -Ec "(Permission denied|Operace zamítnuta)")" -ne 0 ]; then
+        errorexit "Permission denied"
+    fi
+    if [ "$(touch "$MOLE_RC" 2>&1 | grep -Ec "(Permission denied|Operace zamítnuta)")" -ne 0 ]; then
+        errorexit "Permission denied"
+    fi
+fi 
+
+#file editor selection
+FEDITOR=$EDITOR
+if [ -z "$EDITOR" ]; then
+    FEDITOR=$VISUAL
+    if [ -z "$VISUAL" ]; then
+        FEDITOR="vi"
+    fi
+fi
+if ! command -v "$FEDITOR" >/dev/null ; then
+    errorexit "Editor \"$FEDITOR\" is not available"
+fi
+
+#default directory
+DIR=$PWD
+
+#reset variables
+LIST=""
+SECRET_LOG=""
+MOST=""
+GROUP=""
+DATE_AFTER=""
+DATE_BEFORE=""
+FILE=""
+DIRS=""
+
+#positional arguments parsing
+case $1 in
+    list)
+        LIST=0
+        shift
+        ;;
+    secret-log)
+        SECRET_LOG=0
+        shift
+        ;;
+esac
+
+#option arguments parsing
+while getopts ":hmg:a:b:" OPT; do
+    case $OPT in
+        h)
+            printhelp
+            exit 0
+            ;;
+        g)
+            if [ -n "$GROUP" ]; then
+                errorexit "Argument \"-$OPT\" was already set"
+            fi
+            if [ -n "$SECRET_LOG" ]; then
+                errorexit "Argument \"-$OPT\" is not compatible with \"secret-log\""
+            fi
+            GROUP=$OPTARG
+            ;;
+        m)
+            if [ -n "$MOST" ]; then
+                errorexit "Option \"-$OPT\" was already set"
+            fi
+            if [ -n "$SECRET_LOG" ]; then
+                errorexit "Option \"-$OPT\" is not compatible with \"secret-log\""
+            fi
+            if [ -n "$LIST" ]; then
+                errorexit "Option \"-$OPT\" is not compatible with \"list\""
+            fi
+            MOST=0
+            ;;
+        a)
+            if [ -n "$DATE_AFTER" ]; then
+                errorexit "Option \"-$OPT\" was already set"
+            fi
+            
+            #date validation
+            if ! echo "$OPTARG" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || ! date -d "$OPTARG" >/dev/null 2>&1; then
+                errorexit "Invalid date format"
+            fi
+            DATE_AFTER="$OPTARG"
+            ;;
+        b)
+            if [ -n "$DATE_BEFORE" ]; then
+                errorexit "Option \"-$OPT\" was already set"
+            fi
+
+            #date validation
+            if ! echo "$OPTARG" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || ! date -d "$OPTARG" >/dev/null 2>&1; then
+                errorexit "Invalid date format"
+            fi
+            DATE_BEFORE="$OPTARG"
+            ;;
+        :)
+            errorexit "Option -$OPTARG requires an option value."
+            ;;
+        \?)
+            errorexit "Invalid option: -$OPTARG"
+            ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+#printf "Remaining arguments are: %s\n" "$*"
+
+#file/dir argument parsing
+if [ -n "$1" ]; then
+    #directory argument
+    if [ -d "$1" ]; then
+        #secret log argument
+        if [ -n "$SECRET_LOG" ]; then
+            for DIR in "$@"; do
+                DIR_D=$(realpath "$DIR")
+                if echo "$DIRS" | grep -q "$DIR_D"; then
+                    continue
+                fi
+                if [ -z "$DIRS" ]; then
+                    DIRS="$DIR_D"
+                else
+                    DIRS="$DIRS $DIR_D"
+                fi
+                shift
+            done
+        else 
+            DIR=$(realpath "$1")
+            shift
+        fi
+    #file argument
+    else
+        if [ -n "$MOST" ]; then
+            errorexit "Option \"-m\" is not compatible with file argument"
+        fi
+        if [ -n "$DATE_AFTER" ]; then
+            errorexit "Option \"-a\" is not compatible with file argument"
+        fi
+        if [ -n "$DATE_BEFORE" ]; then
+            errorexit "Option \"-b\" is not compatible with file argument"
+        fi
+        if [ -n "$LIST" ]; then
+            errorexit "Option \"list\" is not compatible with file argument"
+        fi
+        if [ -n "$SECRET_LOG" ]; then
+            errorexit "Option \"secret-log\" is not compatible with file argument"
+        fi
+        if echo "$GROUP" | grep -q ','; then
+            errorexit "Option \"-g\" cannot contain multiple groups"
+        fi
+        FILE=$(realpath "$1")
+        shift
+    fi
+fi
+
+#remaining arguments parsing
+if [ $# -gt 0 ]; then
+    errorexit "Invalid (type or order of) arguments \"$*\""
+fi
+
+#list edits
+if [ -n "$LIST" ]; then
+
+    #filter edits in selected directory
+    EDITS=$(awk '{ print }' "$MOLE_RC" | grep -E "^($DIR/|/)[^/;]*;") 
+
+    #filter edits by specified filters
+    if [ -n "$DATE_AFTER" ] || [ -n "$DATE_BEFORE" ] || [ -n "$GROUP" ]; then
+        EDITS=$(filter_edits "$EDITS")
+    fi
+
+    #get list of files to print
+    LIST=$(list_edits "$EDITS")
+
+    if [ -n "$LIST" ]; then
+        printf "%s\n" "$LIST"
+    fi
+
+    exit 0
+
+#secret log
+elif [ -n "$SECRET_LOG" ]; then
+
+    #filter edits in selected directory/directories
+    if [ -z "$DIRS" ]; then
+        EDITS=$(awk '{ print }' "$MOLE_RC")
+    else
+        for DIR_D in $DIRS; do
+            DIR_EDITS=$(awk '{ print }' "$MOLE_RC" | grep -E "^($DIR_D/|/)[^/;]*;")
+            if [ -z "$EDITS" ]; then
+                EDITS="$DIR_EDITS"
+            else
+                EDITS="$EDITS $DIR_EDITS"
+            fi
+        done
+    fi
+
+    #filter edits by specified filters
+    if [ -n "$DATE_AFTER" ] || [ -n "$DATE_BEFORE" ]; then
+        EDITS=$(filter_edits "$EDITS")
+    fi
+
+    secretlog_create "$EDITS"
+    exit 0
+
+#edit file
+else 
+
+    #file selection from log
+    if [ -z "$FILE" ]; then
+        #filter edits in selected directory
+        EDITS=$(awk '{ print }' "$MOLE_RC" | grep -E "^($DIR/|/)[^/;]*;") 
+
+        #filter edits by specified filters
+        if [ -n "$DATE_AFTER" ] || [ -n "$DATE_BEFORE" ] || [ -n "$GROUP" ]; then
+            EDITS=$(filter_edits "$EDITS")
+            #not assign GROUP to new edit
+            GROUP=""
+        fi
+
+        MOST_COUNT=0
+        REVERSE_EDITS=$(echo "$EDITS" | tac)
+
+        for EDIT_E in $REVERSE_EDITS; do
+
+            FILE_F=$(echo "$EDIT_E" | awk -F ';' '{ print $1 }')
+
+            #skip if file does not exist
+            if [ ! -f "$FILE_F" ]; then
+                continue
+            fi
+
+            #select file by most edits
+            if [ -n "$MOST" ]; then
+                FILE_EDIT_COUNT=$(echo "$EDITS" | grep -cE "(^| )$FILE_F;")
+                #select last of most edited files
+                if [ "$FILE_EDIT_COUNT" -gt "$MOST_COUNT" ]; then
+                    MOST_COUNT=$FILE_EDIT_COUNT
+                    FILE=$FILE_F
+                fi
+
+            #select file by last edit date
+            else 
+                FILE=$FILE_F
+                break
+            fi
+        done
+    fi
+
+    if [ -z "$FILE" ]; then
+        errorexit "No existing file selected for editing"
+    fi
+
+    logfile
+    $FEDITOR "$FILE"
+    exit $?
+fi
