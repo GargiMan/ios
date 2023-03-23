@@ -1,19 +1,23 @@
 #!/bin/sh
 export POSIXLY_CORRECT=yes
+export LC_ALL=C
 
 printhelp() {
     printf "MOLE - Makes One's Life Easier\n"
+    printf "Open file in editor (default: vi)\n"
+    printf "Without any argument mole search last edited file in \$PWD\n"
     printf "Usage:\n"
     printf "  mole -h                           print this help\n"
-    printf "  mole [-g GROUP] FILE              edit FILE and assign editation to group\n"
+    printf "  mole [-g GROUP] FILE              edit FILE and assign editation to GROUP\n"
     printf "  mole [-m] [FILTERS] [DIRECTORY]   edit last edited file in DIRECTORY, FILTERS can be used to filter files, -m to edit most edited file\n"
     printf "  mole list [FILTERS] [DIRECTORY]   list edited files in DIRECTORY, FILTERS can be used to filter files\n"
     #create secret log with edit times
     #printf "  mole secret-log [-b DATE] [-a DATE] [DIRECTORY1 [DIRECTORY2 [...]]]\n"  
     printf "\n[FILTERS]:\n"
-    printf "  [ -g GROUP1[,GROUP2[,...]]]   ignore edits not in GROUP\n"
     printf "  [ -a DATE ]                   ignore edits before DATE, date format: YYYY-MM-DD\n"
     printf "  [ -b DATE ]                   ignore edits after DATE, date format: YYYY-MM-DD\n"
+    printf "  [ -g GROUP1[,GROUP2[,...]]]   ignore edits without any of GROUPS\n"
+    printf "  [ -d ]                        ignore edits with group\n"
 }
 
 errorexit() { 
@@ -140,7 +144,7 @@ secretlog_create() {
     fi
 
     LOG_DATETIME=$(date +%F_%H-%M-%S)
-    if [ "$(printf "%s" "$LOG_DATA" | bzip2 > ~/.mole/log_"${USER}"_"${LOG_DATETIME}".bz2 2>&1 | grep -Ec "(Permission denied|Operace zamítnuta)")" -ne 0 ]; then 
+    if [ "$(printf "$LOG_DATA" | bzip2 > ~/.mole/log_"${USER}"_"${LOG_DATETIME}".bz2 2>&1 | grep -Ec "(Permission denied|Operace zamítnuta)")" -ne 0 ]; then 
         errorexit "Permission denied"
     fi
 }
@@ -174,6 +178,10 @@ filter_edits() {
         EDIT_GROUP=$(echo "$EDIT_E" | awk -F ',' '{ print $2 }')
         if [ -n "$GROUP" ]; then
             if ! echo "$GROUP_LIST" | tr ',' '\n' | grep -qx "$EDIT_GROUP"; then
+                continue
+            fi
+        elif [ -n "$DEFAULT" ]; then
+            if [ -n "$EDIT_GROUP" ]; then
                 continue
             fi
         fi
@@ -223,6 +231,7 @@ DATE_AFTER=""
 DATE_BEFORE=""
 FILE=""
 DIRS=""
+DEFAULT=""
 
 #positional arguments parsing
 case $1 in
@@ -237,7 +246,7 @@ case $1 in
 esac
 
 #option arguments parsing
-while getopts ":hmg:a:b:" OPT; do
+while getopts ":hmdg:a:b:" OPT; do
     case $OPT in
         h)
             printhelp
@@ -245,12 +254,27 @@ while getopts ":hmg:a:b:" OPT; do
             ;;
         g)
             if [ -n "$GROUP" ]; then
-                errorexit "Argument \"-$OPT\" was already set"
+                errorexit "Option \"-$OPT\" was already set"
             fi
             if [ -n "$SECRET_LOG" ]; then
-                errorexit "Argument \"-$OPT\" is not compatible with \"secret-log\""
+                errorexit "Option \"-$OPT\" is not compatible with \"secret-log\""
+            fi
+            if [ -n "$DEFAULT" ]; then
+                errorexit "Option \"-$OPT\" is not compatible with option \"-d\""
             fi
             GROUP=$OPTARG
+            ;;
+        d)
+            if [ -n "$DEFAULT" ]; then
+                errorexit "Option \"-$OPT\" was already set"
+            fi
+            if [ -n "$SECRET_LOG" ]; then
+                errorexit "Option \"-$OPT\" is not compatible with \"secret-log\""
+            fi
+            if [ -n "$GROUP" ]; then
+                errorexit "Option \"-$OPT\" is not compatible with option \"-g\""
+            fi
+            DEFAULT=0
             ;;
         m)
             if [ -n "$MOST" ]; then
@@ -268,8 +292,6 @@ while getopts ":hmg:a:b:" OPT; do
             if [ -n "$DATE_AFTER" ]; then
                 errorexit "Option \"-$OPT\" was already set"
             fi
-            
-            #date validation
             if ! echo "$OPTARG" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || ! date -d "$OPTARG" >/dev/null 2>&1; then
                 errorexit "Invalid date format"
             fi
@@ -279,8 +301,6 @@ while getopts ":hmg:a:b:" OPT; do
             if [ -n "$DATE_BEFORE" ]; then
                 errorexit "Option \"-$OPT\" was already set"
             fi
-
-            #date validation
             if ! echo "$OPTARG" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || ! date -d "$OPTARG" >/dev/null 2>&1; then
                 errorexit "Invalid date format"
             fi
@@ -331,6 +351,9 @@ if [ -n "$1" ]; then
         if [ -n "$DATE_BEFORE" ]; then
             errorexit "Option \"-b\" is not compatible with file argument"
         fi
+        if [ -n "$DEFAULT" ]; then
+            errorexit "Option \"-d\" is not compatible with file argument"
+        fi
         if [ -n "$LIST" ]; then
             errorexit "Option \"list\" is not compatible with file argument"
         fi
@@ -357,7 +380,7 @@ if [ -n "$LIST" ]; then
     EDITS=$(awk '{ print }' "$MOLE_RC" | grep -E "^($DIR/|/)[^/;]*;") 
 
     #filter edits by specified filters
-    if [ -n "$DATE_AFTER" ] || [ -n "$DATE_BEFORE" ] || [ -n "$GROUP" ]; then
+    if [ -n "$DATE_AFTER" ] || [ -n "$DATE_BEFORE" ] || [ -n "$GROUP" ] || [ -n "$DEFAULT" ]; then
         EDITS=$(filter_edits "$EDITS")
     fi
 
@@ -404,7 +427,7 @@ else
         EDITS=$(awk '{ print }' "$MOLE_RC" | grep -E "^($DIR/|/)[^/;]*;") 
 
         #filter edits by specified filters
-        if [ -n "$DATE_AFTER" ] || [ -n "$DATE_BEFORE" ] || [ -n "$GROUP" ]; then
+        if [ -n "$DATE_AFTER" ] || [ -n "$DATE_BEFORE" ] || [ -n "$GROUP" ] || [ -n "$DEFAULT" ]; then
             EDITS=$(filter_edits "$EDITS")
             #not assign GROUP to new edit
             GROUP=""
