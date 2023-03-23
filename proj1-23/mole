@@ -2,6 +2,10 @@
 export POSIXLY_CORRECT=yes
 export LC_ALL=C
 
+# $MOLE_RC is file with editations
+# Editor priority: $EDITOR > $VISUAL > vi
+# Log files are stored in ~/.mole
+
 printhelp() {
     printf "MOLE - Makes One's Life Easier\n"
     printf "Open file in editor (default: vi)\n"
