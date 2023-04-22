@@ -33,6 +33,12 @@ logfile() {
     DATE=$(date +%Y/%m/%d)
     TIME=$(date +%H:%M:%S)
     DATETIME="${DATE}_${TIME}"
+
+    #check if log file is writable
+    if [ ! -w "$MOLE_RC" ]; then
+        errorexit "Log file is not writable"
+    fi
+
     echo "$FILE;$DATETIME,$GROUP" >> "$MOLE_RC"
 }
 
@@ -154,7 +160,7 @@ secretlog_create() {
 }
 
 filter_edits() {
-    GROUP_LIST=$(echo "$GROUP" | tr ',' ' ')
+    GROUP_LIST=$(echo "$GROUP" | tr ',' '\n')
     DATE_MIN_S=$(date -d "$DATE_AFTER 23:59:59" +%s)
     DATE_MAX_S=$(date -d "$DATE_BEFORE 00:00:00" +%s)
 
@@ -181,7 +187,7 @@ filter_edits() {
 
         EDIT_GROUP=$(echo "$EDIT_E" | awk -F ',' '{ print $2 }')
         if [ -n "$GROUP" ]; then
-            if ! echo "$GROUP_LIST" | tr ',' '\n' | grep -qx "$EDIT_GROUP"; then
+            if ! echo "$GROUP_LIST" | grep -qx "$EDIT_GROUP"; then
                 continue
             fi
         elif [ -n "$DEFAULT" ]; then
@@ -209,7 +215,7 @@ elif [ ! -f "$MOLE_RC" ]; then
     if [ "$(touch "$MOLE_RC" 2>&1 | grep -Ec "(Permission denied|Operace zamítnuta)")" -ne 0 ]; then
         errorexit "Permission denied"
     fi
-fi 
+fi
 
 #file editor selection
 FEDITOR=$EDITOR
@@ -237,18 +243,6 @@ FILE=""
 DIRS=""
 DEFAULT=""
 
-#positional arguments parsing
-case $1 in
-    list)
-        LIST=0
-        shift
-        ;;
-    secret-log)
-        SECRET_LOG=0
-        shift
-        ;;
-esac
-
 #option arguments parsing
 while getopts ":hmdg:a:b:" OPT; do
     case $OPT in
@@ -260,37 +254,29 @@ while getopts ":hmdg:a:b:" OPT; do
             if [ -n "$GROUP" ]; then
                 errorexit "Option \"-$OPT\" was already set"
             fi
-            if [ -n "$SECRET_LOG" ]; then
-                errorexit "Option \"-$OPT\" is not compatible with \"secret-log\""
-            fi
             if [ -n "$DEFAULT" ]; then
                 errorexit "Option \"-$OPT\" is not compatible with option \"-d\""
             fi
             GROUP=$OPTARG
+            shift
+            shift
             ;;
         d)
             if [ -n "$DEFAULT" ]; then
                 errorexit "Option \"-$OPT\" was already set"
             fi
-            if [ -n "$SECRET_LOG" ]; then
-                errorexit "Option \"-$OPT\" is not compatible with \"secret-log\""
-            fi
             if [ -n "$GROUP" ]; then
                 errorexit "Option \"-$OPT\" is not compatible with option \"-g\""
             fi
             DEFAULT=0
+            shift
             ;;
         m)
             if [ -n "$MOST" ]; then
                 errorexit "Option \"-$OPT\" was already set"
             fi
-            if [ -n "$SECRET_LOG" ]; then
-                errorexit "Option \"-$OPT\" is not compatible with \"secret-log\""
-            fi
-            if [ -n "$LIST" ]; then
-                errorexit "Option \"-$OPT\" is not compatible with \"list\""
-            fi
             MOST=0
+            shift
             ;;
         a)
             if [ -n "$DATE_AFTER" ]; then
@@ -300,6 +286,8 @@ while getopts ":hmdg:a:b:" OPT; do
                 errorexit "Invalid date format"
             fi
             DATE_AFTER="$OPTARG"
+            shift
+            shift
             ;;
         b)
             if [ -n "$DATE_BEFORE" ]; then
@@ -309,6 +297,8 @@ while getopts ":hmdg:a:b:" OPT; do
                 errorexit "Invalid date format"
             fi
             DATE_BEFORE="$OPTARG"
+            shift
+            shift
             ;;
         :)
             errorexit "Option -$OPTARG requires an option value."
@@ -319,31 +309,68 @@ while getopts ":hmdg:a:b:" OPT; do
     esac
 done
 
+#keyword arguments parsing
+for ARG in $#; do
+    case $1 in
+        list)
+            if [ -n "$LIST" ]; then
+                errorexit "Keyword \"$ARG\" was already set"
+            fi
+            if [ -n "$SECRET_LOG" ]; then
+                errorexit "Keyword \"$ARG\" is not compatible with keyword \"secret-log\""
+            fi
+            if [ -n "$MOST" ]; then
+                errorexit "Keyword \"$ARG\" is not compatible with option \"-m\""
+            fi
+            LIST=0
+            shift
+            ;;
+        secret-log)
+            if [ -n "$SECRET_LOG" ]; then
+                errorexit "Keyword \"$ARG\" was already set"
+            fi
+            if [ -n "$LIST" ]; then
+                errorexit "Keyword \"$ARG\" is not compatible with keyword \"list\""
+            fi
+            if [ -n "$MOST" ]; then
+                errorexit "Keyword \"$ARG\" is not compatible with option \"-m\""
+            fi
+            if [ -n "$GROUP" ]; then
+                errorexit "Keyword \"$ARG\" is not compatible with option \"-g\""
+            fi
+            if [ -n "$DEFAULT" ]; then
+                errorexit "Keyword \"$ARG\" is not compatible with option \"-d\""
+            fi
+            SECRET_LOG=0
+            shift
+            ;;
+    esac
+done
+
 shift $((OPTIND - 1))
 #printf "Remaining arguments are: %s\n" "$*"
 
 #file/dir argument parsing
 if [ -n "$1" ]; then
-    #directory argument
-    if [ -d "$1" ]; then
-        #secret log argument
-        if [ -n "$SECRET_LOG" ]; then
-            for DIR in "$@"; do
-                DIR_D=$(realpath "$DIR")
-                if echo "$DIRS" | grep -q "$DIR_D"; then
-                    continue
-                fi
-                if [ -z "$DIRS" ]; then
-                    DIRS="$DIR_D"
-                else
-                    DIRS="$DIRS $DIR_D"
-                fi
+    #secret log argument
+    if [ -n "$SECRET_LOG" ]; then
+        for DIR in "$@"; do
+            DIR_D=$(realpath -q "$DIR")
+            if [ -z "$DIR_D" ] || echo "$DIRS" | grep -qE "(^| )$DIR_D($| )"; then
                 shift
-            done
-        else 
-            DIR=$(realpath "$1")
+                continue
+            fi
+            if [ -z "$DIRS" ]; then
+                DIRS="$DIR_D"
+            else
+                DIRS="$DIRS $DIR_D"
+            fi
             shift
-        fi
+        done
+    #directory argument
+    elif [ -d "$1" ]; then
+        DIR=$(realpath "$1")
+        shift
     #file argument
     else
         if [ -n "$MOST" ]; then
@@ -359,15 +386,15 @@ if [ -n "$1" ]; then
             errorexit "Option \"-d\" is not compatible with file argument"
         fi
         if [ -n "$LIST" ]; then
-            errorexit "Option \"list\" is not compatible with file argument"
+            errorexit "Keyword \"list\" is not compatible with file argument"
         fi
         if [ -n "$SECRET_LOG" ]; then
-            errorexit "Option \"secret-log\" is not compatible with file argument"
+            errorexit "Keyword \"secret-log\" is not compatible with file argument"
         fi
         if echo "$GROUP" | grep -q ','; then
             errorexit "Option \"-g\" cannot contain multiple groups"
         fi
-        FILE=$(realpath "$1")
+        FILE=$(realpath -m "$1")
         shift
     fi
 fi
@@ -376,6 +403,11 @@ fi
 if [ $# -gt 0 ]; then
     errorexit "Invalid (type or order of) arguments \"$*\""
 fi
+
+#check if log file is readable
+if [ ! -r "$MOLE_RC" ]; then
+    errorexit "Log file is not readable"
+fi 
 
 #list edits
 if [ -n "$LIST" ]; then
