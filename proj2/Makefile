@@ -1,18 +1,19 @@
 # Makefile IOS DU2
 # Autor: Marek Gergel, FIT
 
+PROJ = proj2
 CC = gcc
 CFLAGS = -std=gnu99 -Wall -Wextra -Werror -pedantic
 
 .PHONY: zip clean
 
-all: proj2
+all: $(PROJ)
 
-proj2: proj2.c
-	$(CC) $(CFLAGS) proj2.c -o $@
+$(PROJ): $(PROJ).c
+	$(CC) $(CFLAGS) $(PROJ).c -o $@
 
-zip: *.c Makefile
-	zip proj2.zip *.c Makefile
+zip:
+	zip $(PROJ).zip $(PROJ).c Makefile
 
 clean:
-	$(RM) -f proj2
+	$(RM) -f $(PROJ)
