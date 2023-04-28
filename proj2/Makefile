@@ -3,7 +3,7 @@
 
 PROJ = proj2
 CC = gcc
-CFLAGS = -std=gnu99 -Wall -Wextra -Werror -pedantic
+CFLAGS = -std=gnu99 -Wall -Wextra -Werror -pedantic -pthread -lrt
 
 .PHONY: zip clean
 
@@ -13,7 +13,7 @@ $(PROJ): $(PROJ).c
 	$(CC) $(CFLAGS) $(PROJ).c -o $@
 
 zip:
-	zip $(PROJ).zip $(PROJ).c Makefile
+	zip $(PROJ).zip *.c *.h Makefile
 
 clean:
-	$(RM) -f $(PROJ)
+	$(RM) -f $(PROJ) *.out
