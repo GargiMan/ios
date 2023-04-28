@@ -15,4 +15,4 @@ zip: *.c Makefile
 	zip proj2.zip *.c Makefile
 
 clean:
-	$(RM) -f proj2
+	rm -f proj2
