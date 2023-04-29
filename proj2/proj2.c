@@ -19,11 +19,21 @@
 #include <semaphore.h>
 #include <ctype.h>
 
-#define PARAMS 5 // number of required values in arguments {NZ, NU, TZ, TU, F}
+#define PARAMS 5   // number of required values in arguments {NZ, NU, TZ, TU, F}
+#define SERVICES 3 // number of services
 #define OUT_FILE "proj2.out"
 
 #define KEY_COUNTER 1234
 #define KEY_OFFICE_CLOSED 12345
+#define KEY_QUEUE 123456
+
+// services
+typedef enum service
+{
+    LIST = 0,
+    PACKAGE = 1,
+    MONEY = 2
+} service_t;
 
 // shared memory
 int counter_shmid;
@@ -31,6 +41,9 @@ int *counter;
 
 int office_closed_shmid;
 bool *office_closed;
+
+int queue_shmid;
+int *queue;
 
 // semaphores
 sem_t *sem_called_list;
@@ -41,31 +54,6 @@ sem_t *sem_output;
 // output file
 FILE *f = NULL;
 
-// services
-typedef enum service
-{
-    LIST = 1,
-    PACKAGE = 2,
-    MONEY = 3
-} service_t;
-
-// queue
-typedef struct node
-{
-    unsigned long data;
-    struct node *next;
-} node_t;
-
-typedef struct queue
-{
-    node_t *head;
-    node_t *tail;
-} queue_t;
-
-queue_t *queue_list;
-queue_t *queue_package;
-queue_t *queue_money;
-
 // process functions
 void officer_p(unsigned long id, unsigned long pause);
 void customer_p(unsigned long id, unsigned long wait);
@@ -73,14 +61,6 @@ void customer_p(unsigned long id, unsigned long wait);
 // semaphores functions
 void sems_init();
 void sems_destroy();
-
-// queue functions
-void queue_init(queue_t *queue);
-void queue_destroy(queue_t *queue);
-void queue_enqueue(queue_t *queue, unsigned long data);
-unsigned long queue_dequeue(queue_t *queue);
-bool queue_is_empty(queue_t *queue);
-bool queue_is_empty_s(service_t service);
 
 // helper functions
 void append_to_file(const char *fmt, ...);
@@ -132,11 +112,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    // init queues
-    queue_init(queue_list);
-    queue_init(queue_package);
-    queue_init(queue_money);
-
     // create shared memory
     counter_shmid = shmget(KEY_COUNTER, sizeof(int), IPC_CREAT | 0666);
     counter = (int *)shmat(counter_shmid, NULL, 0);
@@ -145,6 +120,12 @@ int main(int argc, char *argv[])
     office_closed_shmid = shmget(KEY_OFFICE_CLOSED, sizeof(bool), IPC_CREAT | 0666);
     office_closed = (bool *)shmat(office_closed_shmid, NULL, 0);
     *office_closed = false;
+
+    queue_shmid = shmget(KEY_QUEUE, sizeof(int) * SERVICES, IPC_CREAT | 0666);
+    queue = (int *)shmat(queue_shmid, NULL, 0);
+    queue[LIST] = 0;
+    queue[PACKAGE] = 0;
+    queue[MONEY] = 0;
 
     // create semaphores
     sems_init();
@@ -220,22 +201,25 @@ void customer_p(unsigned long id, unsigned long wait)
 
     if (!(*office_closed))
     {
-        service_t service = (rand() % 3) + 1;
+        service_t service = rand() % SERVICES;
 
-        append_to_file("Z %d: entering office for a service %d\n", id, service);
+        append_to_file("Z %d: entering office for a service %d\n", id, service + 1);
 
         switch (service)
         {
         case LIST:
-            queue_enqueue(queue_list, id);
+            queue[LIST]++;
+            // printf("LIST: %d\n", queue[LIST]);
             sem_wait(sem_called_list);
             break;
         case PACKAGE:
-            queue_enqueue(queue_package, id);
+            queue[PACKAGE]++;
+            // printf("PACKAGE: %d\n", queue[PACKAGE]);
             sem_wait(sem_called_package);
             break;
         case MONEY:
-            queue_enqueue(queue_money, id);
+            queue[MONEY]++;
+            // printf("MONEY: %d\n", queue[MONEY]);
             sem_wait(sem_called_money);
             break;
         }
@@ -266,30 +250,30 @@ void officer_p(unsigned long id, unsigned long pause)
     while (1)
     {
 
-        if (!queue_is_empty(queue_list) || !queue_is_empty(queue_package) || !queue_is_empty(queue_money))
+        if (queue[LIST] + queue[PACKAGE] + queue[MONEY] != 0)
         {
             service_t service, service1, service2, service3;
 
-            service1 = (rand() % 3) + 1;
+            service1 = rand() % SERVICES;
             service = service1;
 
-            if (queue_is_empty_s(service))
+            if (queue[service] == 0)
             {
                 do
                 {
-                    service2 = (rand() % 3) + 1;
+                    service2 = rand() % SERVICES;
                 } while (service2 == service1);
                 service = service2;
 
-                if (queue_is_empty_s(service))
+                if (queue[service] == 0)
                 {
                     do
                     {
-                        service3 = (rand() % 3) + 1;
+                        service3 = rand() % SERVICES;
                     } while (service3 == service1 || service3 == service2);
                     service = service3;
 
-                    if (queue_is_empty_s(service))
+                    if (queue[service] == 0)
                     {
                         continue;
                     }
@@ -299,26 +283,23 @@ void officer_p(unsigned long id, unsigned long pause)
             switch (service)
             {
             case LIST:
-                if (!queue_is_empty(queue_list))
-                {
-                    sem_post(sem_called_list);
-                }
+                queue[LIST]--;
+                // printf("LIST: %d\n", queue[LIST]);
+                sem_post(sem_called_list);
                 break;
             case PACKAGE:
-                if (!queue_is_empty(queue_package))
-                {
-                    sem_post(sem_called_package);
-                }
+                queue[PACKAGE]--;
+                // printf("PACKAGE: %d\n", queue[PACKAGE]);
+                sem_post(sem_called_package);
                 break;
             case MONEY:
-                if (!queue_is_empty(queue_money))
-                {
-                    sem_post(sem_called_money);
-                }
+                queue[MONEY]--;
+                // printf("MONEY: %d\n", queue[MONEY]);
+                sem_post(sem_called_money);
                 break;
             }
 
-            append_to_file("U %d: serving a service of type %d\n", id, service);
+            append_to_file("U %d: serving a service of type %d\n", id, service + 1);
 
             // sleep for <0, 10>
             usleep(rand() % 11);
@@ -373,92 +354,6 @@ void sems_destroy()
     }
 }
 
-// ------------------------ QUEUE FUNCTIONS -------------------------
-
-void queue_init(queue_t *queue)
-{
-    queue = (queue_t *)malloc(sizeof(queue_t));
-    if (queue == NULL)
-    {
-        error_exit(true, 1, "Cannot allocate memory for queue\n");
-    }
-
-    queue->head = NULL;
-    queue->tail = NULL;
-}
-
-void queue_destroy(queue_t *queue)
-{
-    while (!queue_is_empty(queue))
-    {
-        node_t *tmp = queue->head;
-        queue->head = queue->head->next;
-        free(tmp);
-    }
-
-    free(queue);
-}
-
-void queue_enqueue(queue_t *queue, unsigned long data)
-{
-    node_t *node = (node_t *)malloc(sizeof(node_t));
-    if (node == NULL)
-    {
-        error_exit(true, 1, "Cannot allocate memory for node\n");
-    }
-
-    node->data = data;
-    node->next = NULL;
-
-    if (queue_is_empty(queue))
-    {
-        queue->head = node;
-        queue->tail = node;
-    }
-    else
-    {
-        queue->tail->next = node;
-        queue->tail = node;
-    }
-}
-
-unsigned long queue_dequeue(queue_t *queue)
-{
-    if (queue_is_empty(queue))
-    {
-        error_exit(true, 1, "Cannot dequeue from empty queue\n");
-    }
-
-    node_t *tmp = queue->head;
-    unsigned long data = tmp->data;
-
-    queue->head = queue->head->next;
-    free(tmp);
-
-    return data;
-}
-
-bool queue_is_empty(queue_t *queue)
-{
-    return queue->head == NULL;
-}
-
-bool queue_is_empty_s(service_t service)
-{
-    switch (service)
-    {
-    case LIST:
-        return queue_is_empty(queue_list);
-    case PACKAGE:
-        return queue_is_empty(queue_package);
-    case MONEY:
-        return queue_is_empty(queue_money);
-    default:
-        error_exit(true, 1, "Invalid service type\n");
-        return true;
-    }
-}
-
 // ------------------------ HELPER FUNCTIONS ------------------------
 
 /**
@@ -488,16 +383,13 @@ void free_resources()
     // Close output file
     fclose(f);
 
-    // Destroy queue
-    queue_destroy(queue_list);
-    queue_destroy(queue_package);
-    queue_destroy(queue_money);
-
     // Detach and remove shared memory
     shmdt(counter);
     shmctl(counter_shmid, KEY_COUNTER, NULL);
     shmdt(office_closed);
     shmctl(office_closed_shmid, KEY_OFFICE_CLOSED, NULL);
+    shmdt(queue);
+    shmctl(queue_shmid, KEY_QUEUE, NULL);
 
     // Destroy semaphores
     sems_destroy();
