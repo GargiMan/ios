@@ -19,4 +19,4 @@ clean:
 	rm -f $(PROJ) $(PROJ).zip *.out
 
 zip:
-	zip $(PROJ).zip *.c *.h Makefile
+	zip $(PROJ).zip $(PROJ).c Makefile

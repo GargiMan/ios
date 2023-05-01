@@ -23,9 +23,14 @@
 #define SERVICES 3 // number of services
 #define OUT_FILE "proj2.out"
 
-#define KEY_COUNTER 1234
+#define KEY_COUNTER 12344
 #define KEY_OFFICE_CLOSED 12345
-#define KEY_QUEUE 123456
+
+// process
+int parent_pid;
+
+// output file
+FILE *f = NULL;
 
 // services
 typedef enum service
@@ -50,9 +55,8 @@ sem_t *sem_called_list;
 sem_t *sem_called_package;
 sem_t *sem_called_money;
 sem_t *sem_output;
-
-// output file
-FILE *f = NULL;
+sem_t *sem_queue;
+sem_t *sem_office_closed;
 
 // process functions
 void officer_p(unsigned long id, unsigned long pause);
@@ -79,7 +83,7 @@ int main(int argc, char *argv[])
     // invalid number of arguments
     if (argc - 1 != PARAMS)
     {
-        error_exit(false, 1, "Invalid number of argumets\n");
+        error_exit(false, 1, "Invalid number of argumets - required %d\n", PARAMS);
     }
 
     // open output file
@@ -121,23 +125,20 @@ int main(int argc, char *argv[])
     office_closed = (bool *)shmat(office_closed_shmid, NULL, 0);
     *office_closed = false;
 
-    queue_shmid = shmget(KEY_QUEUE, sizeof(int) * SERVICES, IPC_CREAT | 0666);
+    queue_shmid = shmget(IPC_PRIVATE, sizeof(int) * SERVICES, IPC_CREAT | 0666);
     queue = (int *)shmat(queue_shmid, NULL, 0);
     queue[LIST] = 0;
     queue[PACKAGE] = 0;
     queue[MONEY] = 0;
 
-    // create semaphores
+    // create and initialize semaphores
     sems_init();
 
-    // post semaphores
-    sem_post(sem_output);
-
-    // seed the random number generator with the current time
-    srand(getpid() * time(NULL));
+    // save parent pid
+    parent_pid = getpid();
 
     // customer generator
-    for (unsigned long i = 0; i < param[0]; i++)
+    for (unsigned long i = 1; i <= param[0]; i++)
     {
         pid_t customer = fork();
         if (customer == 0)
@@ -151,7 +152,7 @@ int main(int argc, char *argv[])
     }
 
     // officer generator
-    for (unsigned long i = 0; i < param[1]; i++)
+    for (unsigned long i = 1; i <= param[1]; i++)
     {
         pid_t officer = fork();
         if (officer == 0)
@@ -164,12 +165,17 @@ int main(int argc, char *argv[])
         }
     }
 
+    // seed the random number generator with the current time
+    srand(getpid() * time(NULL));
+
     // sleep for <F/2, F> milliseconds
     int f_half = param[4] / 2;
     usleep((f_half == 0 ? 1 : (rand() % f_half + f_half)) * 1000);
 
     // close office
+    sem_wait(sem_office_closed);
     *office_closed = true;
+    sem_post(sem_office_closed);
     append_to_file("closing\n");
 
     // wait for all officer and customer processes to finish
@@ -199,7 +205,11 @@ void customer_p(unsigned long id, unsigned long wait)
     // sleep for <0, TZ> milliseconds
     usleep(rand() % wait * 1000);
 
-    if (!(*office_closed))
+    sem_wait(sem_office_closed);
+    bool sem_office_closed_value = *office_closed;
+    sem_post(sem_office_closed);
+
+    if (!sem_office_closed_value)
     {
         service_t service = rand() % SERVICES;
 
@@ -208,18 +218,21 @@ void customer_p(unsigned long id, unsigned long wait)
         switch (service)
         {
         case LIST:
+            sem_wait(sem_queue);
             queue[LIST]++;
-            // printf("LIST: %d\n", queue[LIST]);
+            sem_post(sem_queue);
             sem_wait(sem_called_list);
             break;
         case PACKAGE:
+            sem_wait(sem_queue);
             queue[PACKAGE]++;
-            // printf("PACKAGE: %d\n", queue[PACKAGE]);
+            sem_post(sem_queue);
             sem_wait(sem_called_package);
             break;
         case MONEY:
+            sem_wait(sem_queue);
             queue[MONEY]++;
-            // printf("MONEY: %d\n", queue[MONEY]);
+            sem_post(sem_queue);
             sem_wait(sem_called_money);
             break;
         }
@@ -232,6 +245,8 @@ void customer_p(unsigned long id, unsigned long wait)
 
     append_to_file("Z %d: going home\n", id);
 
+    // close file for child process and exit
+    fclose(f);
     exit(0);
 }
 
@@ -247,17 +262,27 @@ void officer_p(unsigned long id, unsigned long pause)
     // seed the random number generator with the current time
     srand(getpid() * time(NULL));
 
+    int sem_queue_value;
+    bool sem_office_closed_value;
+
     while (1)
     {
+        sem_wait(sem_queue);
+        sem_queue_value = queue[LIST] + queue[PACKAGE] + queue[MONEY];
+        sem_post(sem_queue);
 
-        if (queue[LIST] + queue[PACKAGE] + queue[MONEY] != 0)
+        if (sem_queue_value != 0)
         {
             service_t service, service1, service2, service3;
 
             service1 = rand() % SERVICES;
             service = service1;
 
-            if (queue[service] == 0)
+            sem_wait(sem_queue);
+            sem_queue_value = queue[service];
+            sem_post(sem_queue);
+
+            if (sem_queue_value == 0)
             {
                 do
                 {
@@ -265,7 +290,11 @@ void officer_p(unsigned long id, unsigned long pause)
                 } while (service2 == service1);
                 service = service2;
 
-                if (queue[service] == 0)
+                sem_wait(sem_queue);
+                sem_queue_value = queue[service];
+                sem_post(sem_queue);
+
+                if (sem_queue_value == 0)
                 {
                     do
                     {
@@ -273,33 +302,40 @@ void officer_p(unsigned long id, unsigned long pause)
                     } while (service3 == service1 || service3 == service2);
                     service = service3;
 
-                    if (queue[service] == 0)
+                    sem_wait(sem_queue);
+                    sem_queue_value = queue[service];
+                    sem_post(sem_queue);
+
+                    if (sem_queue_value == 0)
                     {
                         continue;
                     }
                 }
             }
 
+            append_to_file("U %d: serving a service of type %d\n", id, service + 1);
+
             switch (service)
             {
             case LIST:
+                sem_wait(sem_queue);
                 queue[LIST]--;
-                // printf("LIST: %d\n", queue[LIST]);
+                sem_post(sem_queue);
                 sem_post(sem_called_list);
                 break;
             case PACKAGE:
+                sem_wait(sem_queue);
                 queue[PACKAGE]--;
-                // printf("PACKAGE: %d\n", queue[PACKAGE]);
+                sem_post(sem_queue);
                 sem_post(sem_called_package);
                 break;
             case MONEY:
+                sem_wait(sem_queue);
                 queue[MONEY]--;
-                // printf("MONEY: %d\n", queue[MONEY]);
+                sem_post(sem_queue);
                 sem_post(sem_called_money);
                 break;
             }
-
-            append_to_file("U %d: serving a service of type %d\n", id, service + 1);
 
             // sleep for <0, 10>
             usleep(rand() % 11);
@@ -308,7 +344,20 @@ void officer_p(unsigned long id, unsigned long pause)
         }
         else
         {
-            if (!(*office_closed))
+            sem_wait(sem_office_closed);
+            sem_office_closed_value = *office_closed;
+            sem_post(sem_office_closed);
+
+            sem_wait(sem_queue);
+            sem_queue_value = queue[LIST] + queue[PACKAGE] + queue[MONEY];
+            sem_post(sem_queue);
+
+            if (sem_queue_value != 0)
+            {
+                continue;
+            }
+
+            if (!sem_office_closed_value)
             {
                 append_to_file("U %d: taking break\n", id);
                 usleep(rand() % pause * 1000);
@@ -323,6 +372,8 @@ void officer_p(unsigned long id, unsigned long pause)
 
     append_to_file("U %d: going home\n", id);
 
+    // close file for child process and exit
+    fclose(f);
     exit(0);
 }
 
@@ -330,14 +381,20 @@ void officer_p(unsigned long id, unsigned long pause)
 
 void sems_init()
 {
+    sem_output = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    sem_queue = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    sem_office_closed = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     sem_called_list = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     sem_called_package = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     sem_called_money = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    sem_output = mmap(NULL, sizeof(sem_t), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
-    if (sem_init(sem_called_list, 1, 0) == -1 || sem_init(sem_called_package, 1, 0) == -1 || sem_init(sem_called_money, 1, 0) == -1 || sem_init(sem_output, 1, 0) == -1)
+    int error = 0;
+
+    error |= sem_init(sem_output, 1, 1) | sem_init(sem_queue, 1, 1) | sem_init(sem_office_closed, 1, 1) | sem_init(sem_called_list, 1, 0) | sem_init(sem_called_package, 1, 0) | sem_init(sem_called_money, 1, 0);
+
+    if (error != 0)
     {
-        error_exit(true, 1, "Cannot initialize semaphore\n");
+        error_exit(true, 1, "Cannot initialize semaphores\n");
     }
 }
 
@@ -345,12 +402,12 @@ void sems_destroy()
 {
     int error = 0;
 
-    error |= sem_destroy(sem_called_list) | sem_destroy(sem_called_package) | sem_destroy(sem_called_money) | sem_destroy(sem_output);
-    error |= munmap(sem_called_list, sizeof(sem_t)) | munmap(sem_called_package, sizeof(sem_t)) | munmap(sem_called_money, sizeof(sem_t)) | munmap(sem_output, sizeof(sem_t));
+    error |= sem_destroy(sem_output) | sem_destroy(sem_queue) | sem_destroy(sem_office_closed) | sem_destroy(sem_called_list) | sem_destroy(sem_called_package) | sem_destroy(sem_called_money);
+    error |= munmap(sem_output, sizeof(sem_t)) | munmap(sem_queue, sizeof(sem_t)) | munmap(sem_office_closed, sizeof(sem_t)) | munmap(sem_called_list, sizeof(sem_t)) | munmap(sem_called_package, sizeof(sem_t)) | munmap(sem_called_money, sizeof(sem_t));
 
     if (error != 0)
     {
-        error_exit(false, 1, "Cannot destroy semaphore\n");
+        error_exit(false, 1, "Cannot destroy semaphores\n");
     }
 }
 
@@ -389,7 +446,7 @@ void free_resources()
     shmdt(office_closed);
     shmctl(office_closed_shmid, KEY_OFFICE_CLOSED, NULL);
     shmdt(queue);
-    shmctl(queue_shmid, KEY_QUEUE, NULL);
+    shmctl(queue_shmid, IPC_PRIVATE, NULL);
 
     // Destroy semaphores
     sems_destroy();
@@ -411,9 +468,21 @@ void error_exit(bool free, int errcode, const char *fmt, ...)
     va_end(args);
     fflush(stderr);
 
+    // free resources if requested
     if (free)
     {
         free_resources();
+    }
+
+    // kill all child processes
+    int status;
+    pid_t child_pid;
+    while ((child_pid = waitpid(-1, &status, WNOHANG)) > 0)
+    {
+        if (getppid() == parent_pid)
+        {
+            kill(child_pid, SIGKILL);
+        }
     }
 
     exit(errcode);
